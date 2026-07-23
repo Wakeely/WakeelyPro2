@@ -5,12 +5,26 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 
+// The state shape useActionState tracks between submissions. Keeping this
+// exported means the client form component and this file always agree on
+// the shape without duplicating it.
+export interface AuthFormState {
+  error?: string;
+}
+
 const loginSchema = z.object({
   email: z.string().email(),
   password: z.string().min(8),
 });
 
-export async function login(formData: FormData) {
+// useActionState requires the action's signature to be
+// (previousState, formData) => State | Promise<State> — that's the piece
+// that was missing before, which is exactly what the Vercel type error
+// was pointing at.
+export async function login(
+  _prevState: AuthFormState,
+  formData: FormData
+): Promise<AuthFormState> {
   const parsed = loginSchema.safeParse({
     email: formData.get("email"),
     password: formData.get("password"),
@@ -22,16 +36,19 @@ export async function login(formData: FormData) {
   if (error) return { error: error.message };
 
   revalidatePath("/", "layout");
-  redirect("/matters");
+  redirect("/matters"); // redirect() throws internally — nothing after this line runs
 }
 
 const signupSchema = z.object({
   email: z.string().email(),
   password: z.string().min(8, "Password must be at least 8 characters."),
-  fullName: z.string().min(2),
+  fullName: z.string().min(2, "Please enter your full name."),
 });
 
-export async function signup(formData: FormData) {
+export async function signup(
+  _prevState: AuthFormState,
+  formData: FormData
+): Promise<AuthFormState> {
   const parsed = signupSchema.safeParse({
     email: formData.get("email"),
     password: formData.get("password"),
