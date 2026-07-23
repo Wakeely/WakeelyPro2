@@ -1,0 +1,10 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* RTL-aware spacing helpers — same intent as the old app's rtl-active /
+   ltr-active body classes, expressed as logical properties so most
+   components need zero directional overrides. */
+[dir="rtl"] .icon-flip {
+  transform: scaleX(-1);
+}
