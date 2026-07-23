@@ -3,12 +3,8 @@ import { GoogleGenAI } from "@google/genai";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentUser, can } from "@/lib/auth/permissions";
 
-// Same Gemini call the old prototype made in server.ts's /api/ai/summarize —
-// that part of the old app was already correct (key stays server-side, never
-// shipped to the browser). What's added here: an auth check, and writing the
-// result back through Supabase (so RLS decides who's allowed to update this
-// row) instead of mutating an in-memory array that resets on every deploy.
 let aiClient: GoogleGenAI | null = null;
+
 function getGeminiClient() {
   if (!aiClient && process.env.GEMINI_API_KEY) {
     aiClient = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
@@ -23,6 +19,7 @@ export async function POST(req: NextRequest) {
   }
 
   const { documentId, docName, category } = await req.json();
+
   const ai = getGeminiClient();
   if (!ai) {
     return NextResponse.json({ error: "GEMINI_API_KEY not configured" }, { status: 503 });
@@ -40,23 +37,35 @@ Respond as clean JSON with 'summary' and 'tags' fields only, no markdown fences.
       contents: prompt,
       config: { responseMimeType: "application/json" },
     });
-    const parsed = JSON.parse(response.text.trim());
+
+    // Fixed: Safely handle response.text which might be undefined
+    const text = response.text?.trim();
+    if (!text) {
+      throw new Error("Empty response from Gemini");
+    }
+
+    const parsed = JSON.parse(text);
 
     const supabase = await createClient();
     const { data, error } = await supabase
       .from("documents")
-      .update({ ai_summary: parsed.summary, ai_tags: parsed.tags })
+      .update({ 
+        ai_summary: parsed.summary, 
+        ai_tags: parsed.tags 
+      })
       .eq("id", documentId)
       .select()
       .single();
 
-    // RLS ("documents: attorneys update") rejects this if the caller isn't
-    // staffed on the document's matter — `error` here can mean that.
-    if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
+    }
 
     return NextResponse.json(data);
   } catch (err) {
     console.error("Gemini summarize failed:", err);
-    return NextResponse.json({ error: "AI summarization failed" }, { status: 500 });
+    return NextResponse.json({ 
+      error: "AI summarization failed" 
+    }, { status: 500 });
   }
 }
